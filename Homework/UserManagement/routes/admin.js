@@ -2,74 +2,162 @@ const User = require('../models/Users');
 const jwt = require('jsonwebtoken');
 const express = require('express');
 const router = express.Router();
+const Product = require('../models/Product');
+const { authMiddleware } = require('./auth'); 
 
-
-const authMiddleware = (req, res, next) => {
-    // Lấy token từ header Authorization (định dạng: "Bearer <token>")
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-
-    // Nếu không có token, trả về lỗi 401 (Unauthorized)
-    if (!token) {
-        return res.status(401).json({ message: 'Access denied' });
-    }
-
-    try {
-        // Giải mã (verify) token bằng JWT_SECRET
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
-        // Lưu thông tin user từ token vào request để sử dụng ở các middleware/controller tiếp theo
-        req.user = decoded;
-        
-        // Gọi next() để tiếp tục xử lý request
-        next();
-    } catch (err) {
-        // Nếu token không hợp lệ, trả về lỗi 400 (Bad Request)
-        res.status(400).json({ message: 'Invalid token' });
-    }
-};
-
-// Middleware kiểm tra quyền Admin (Admin Middleware)
+// Middleware kiểm tra quyền Admin
 const adminMiddleware = (req, res, next) => {
-    // Kiểm tra nếu user không có quyền admin thì trả về lỗi 403 (Forbidden)
     if (req.user.role !== 'admin') {
         return res.status(403).json({ message: 'Access denied' });
     }
-
-    // Nếu là admin, cho phép tiếp tục request
     next();
 };
 
-// Route chỉ cho phép admin truy cập (GET /api/admin)
+/**
+ * Route chỉ cho phép admin truy cập.
+ * @route GET /admin
+ * @access Private (Admin)
+ * @returns {Object} message - Welcome Admin
+ */
 router.get('/', authMiddleware, adminMiddleware, (req, res) => {
     res.json({ message: 'Welcome Admin' });
 });
 
-// admin lay tat ca users
-router.get('/users', authMiddleware, adminMiddleware, (req, res) => {
+/**
+ * Lấy danh sách tất cả người dùng.
+ * @route GET /admin/users
+ * @access Private (Admin)
+ * @returns {Object[]} users - Danh sách tất cả người dùng
+ */
+router.get('/users', authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        User.find()
-            .then(users => {
-                res.json(users);
-            })
-            .catch(err => {
-                console.error(err);
-                res.status(500).json({ message: 'Server error' });
-            });
+        const users = await User.find();
+        res.json(users);
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Server error' });
     }
-    // res.json({ message: 'Welcome Admin' });
-    // // Get all users from database
-    // // res.json(users);
-    // // Example: res.json([
-    // //     { id: 1, username: 'user1', email: 'user1@example.com' },
-    // //     { id: 2, username: 'user2', email: 'user2@example.com' },
-    // // ]);
-    // // Example: res.json([]);
-    // // Example: res.json(null); // Trả về null
-    // // Example: res.status(404).json({ message: 'Not found' });
+});
 
+/**
+ * Validate dữ liệu sản phẩm.
+ * @param {Object} data - Dữ liệu sản phẩm.
+ * @param {string} data.name - Tên sản phẩm.
+ * @param {string} data.sku - SKU của sản phẩm.
+ * @param {number} data.price - Giá sản phẩm.
+ * @param {number} data.qty - Số lượng sản phẩm.
+ * @param {string} [data.thumbnail] - URL ảnh thumbnail của sản phẩm.
+ * @param {string[]} [data.images] - Danh sách URL ảnh của sản phẩm.
+ * @returns {Object} Kết quả kiểm tra.
+ * @returns {boolean} isValid - Dữ liệu hợp lệ hay không.
+ * @returns {string[]} errors - Danh sách lỗi.
+ */
+const validateProduct = (data) => {
+    const errors = [];
+    if (!data.name) errors.push('Product name is required');
+    if (!data.sku) errors.push('SKU is required');
+    if (!data.price || data.price <= 0) errors.push('Valid price is required');
+    if (typeof data.qty !== 'number' || data.qty < 0) errors.push('Valid quantity is required');
+    return { isValid: errors.length === 0, errors };
+};
+
+/**
+ * Lấy danh sách người dùng có phân trang.
+ * @route GET /admin/users/paginated
+ * @access Private (Admin)
+ * @param {number} req.query.page - Trang hiện tại.
+ * @param {number} req.query.limit - Số người dùng mỗi trang.
+ * @returns {Object} Kết quả phân trang.
+ * @returns {number} page - Trang hiện tại.
+ * @returns {number} limit - Số lượng người dùng mỗi trang.
+ * @returns {number} totalUsers - Tổng số người dùng.
+ * @returns {number} totalPages - Tổng số trang.
+ * @returns {Object[]} users - Danh sách người dùng.
+ */
+router.get('/users/paginated', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const totalUsers = await User.countDocuments();
+        const users = await User.find().select('-password').skip(skip).limit(limit);
+
+        res.json({ page, limit, totalUsers, totalPages: Math.ceil(totalUsers / limit), users });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+/**
+ * Tạo sản phẩm mới.
+ * @route POST /admin/products
+ * @access Private (Admin)
+ * @param {Object} req.body - Dữ liệu sản phẩm.
+ * @returns {Object} Sản phẩm đã tạo.
+ */
+router.post('/products', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const validation = validateProduct(req.body);
+        if (!validation.isValid) {
+            return res.status(400).json({ message: 'Invalid product data', errors: validation.errors });
+        }
+
+        const existingProduct = await Product.findOne({ sku: req.body.sku });
+        if (existingProduct) {
+            return res.status(400).json({ message: 'SKU already exists' });
+        }
+
+        const product = new Product(req.body);
+        const savedProduct = await product.save();
+        res.status(201).json({ message: 'Product created successfully', product: savedProduct });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+/**
+ * Cập nhật sản phẩm.
+ * @route PUT /admin/products/:id
+ * @access Private (Admin)
+ * @param {Object} req.body - Dữ liệu sản phẩm cần cập nhật.
+ * @returns {Object} Sản phẩm đã cập nhật.
+ */
+router.put('/products/:id', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const validation = validateProduct(req.body);
+        if (!validation.isValid) {
+            return res.status(400).json({ message: 'Invalid product data', errors: validation.errors });
+        }
+
+        const existingProduct = await Product.findOne({ sku: req.body.sku, _id: { $ne: req.params.id } });
+        if (existingProduct) {
+            return res.status(400).json({ message: 'SKU already exists' });
+        }
+
+        const product = await Product.findByIdAndUpdate(req.params.id, { ...req.body, updatedAt: Date.now() }, { new: true });
+        if (!product) return res.status(404).json({ message: 'Product not found' });
+
+        res.json({ message: 'Product updated successfully', product });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+/**
+ * Xóa sản phẩm.
+ * @route DELETE /admin/products/:id
+ * @access Private (Admin)
+ * @returns {Object} Message xác nhận xóa sản phẩm.
+ */
+router.delete('/products/:id', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const product = await Product.findByIdAndDelete(req.params.id);
+        if (!product) return res.status(404).json({ message: 'Product not found' });
+        res.json({ message: 'Product deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
 });
 
 module.exports = router;
