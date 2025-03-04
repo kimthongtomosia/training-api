@@ -1,7 +1,9 @@
-// Import thư viện jsonwebtoken (JWT) để xử lý xác thực người dùng
+const User = require('../models/Users');
 const jwt = require('jsonwebtoken');
+const express = require('express');
+const router = express.Router();
 
-// Middleware xác thực người dùng (Auth Middleware)
+
 const authMiddleware = (req, res, next) => {
     // Lấy token từ header Authorization (định dạng: "Bearer <token>")
     const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -37,5 +39,37 @@ const adminMiddleware = (req, res, next) => {
     next();
 };
 
-// Xuất các middleware để sử dụng trong các file khác
-module.exports = { authMiddleware, adminMiddleware };
+// Route chỉ cho phép admin truy cập (GET /api/admin)
+router.get('/', authMiddleware, adminMiddleware, (req, res) => {
+    res.json({ message: 'Welcome Admin' });
+});
+
+// admin lay tat ca users
+router.get('/users', authMiddleware, adminMiddleware, (req, res) => {
+    try {
+        User.find()
+            .then(users => {
+                res.json(users);
+            })
+            .catch(err => {
+                console.error(err);
+                res.status(500).json({ message: 'Server error' });
+            });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server error' });
+    }
+    // res.json({ message: 'Welcome Admin' });
+    // // Get all users from database
+    // // res.json(users);
+    // // Example: res.json([
+    // //     { id: 1, username: 'user1', email: 'user1@example.com' },
+    // //     { id: 2, username: 'user2', email: 'user2@example.com' },
+    // // ]);
+    // // Example: res.json([]);
+    // // Example: res.json(null); // Trả về null
+    // // Example: res.status(404).json({ message: 'Not found' });
+
+});
+
+module.exports = router;

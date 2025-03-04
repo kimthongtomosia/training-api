@@ -1,11 +1,12 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const routes = require('./routes');
 
 const app = express();
-
 app.use(express.json());
 
+// Kết nối MongoDB
 mongoose.connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true
@@ -13,10 +14,10 @@ mongoose.connect(process.env.MONGO_URI, {
 .then(() => console.log('Connected to MongoDB'))
 .catch(err => console.error('MongoDB connection error:', err));
 
-// Import Routes
-app.use('/api/auth', require('./routes/authRoutes'));
+// Sử dụng routes
+app.use('/api', routes);
 
-// Error handling middleware
+// Middleware xử lý lỗi
 app.use((err, req, res, next) => {
     res.status(err.status || 500).json({
         status: err.status || 500,

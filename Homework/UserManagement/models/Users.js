@@ -1,41 +1,42 @@
-// Import thư viện mongoose để làm việc với MongoDB
-const mongoose = require('mongoose');
+const mongoose = require('mongoose')
 
-// Định nghĩa schema cho user (Cấu trúc của document trong collection "users")
 const userSchema = new mongoose.Schema({
-    // Thuộc tính username (tên người dùng)
     username: {
-        type: String,      // Kiểu dữ liệu là chuỗi
-        required: true,    // Bắt buộc phải có
-        unique: true       // Không được trùng lặp với user khác
+        type: String,
+        required: true,
+        unique: true
     },
-    
-    // Thuộc tính email
     email: {
-        type: String,      // Kiểu dữ liệu là chuỗi
-        required: true,    // Bắt buộc phải có
-        unique: true       // Không được trùng lặp
+        type: String,
+        required: true,
+        unique: true
     },
-
-    // Thuộc tính password (mật khẩu)
     password: {
-        type: String,      // Kiểu dữ liệu là chuỗi
-        required: true     // Bắt buộc phải có
+        type: String,
+        required: true
     },
-
-    // Thuộc tính role (vai trò của user)
+    authenToken: {
+        type: String,
+        unique: true
+    },
+    verificationToken: {
+        type: String
+    },
+    resetPasswordToken:{
+        type: String
+    },
+    resetPasswordExpires:{
+        type: Date
+    },
     role: {
-        type: String,      // Kiểu dữ liệu là chuỗi
-        enum: ['user', 'admin'],  // Chỉ nhận giá trị 'user' hoặc 'admin'
-        default: 'user'    // Mặc định là 'user'
+        type: String,
+        enum: ['user', 'admin'],
+        default: 'user'
     },
-
-    // Thuộc tính xác thực email (đã xác thực hay chưa)
     isVerified: {
-        type: Boolean,     // Kiểu dữ liệu boolean (true/false)
-        default: false     // Mặc định là false (chưa xác thực)
+        type: Boolean,
+        default: true
     }
 });
 
-// Xuất model User để sử dụng ở các file khác
 module.exports = mongoose.model('User', userSchema);
